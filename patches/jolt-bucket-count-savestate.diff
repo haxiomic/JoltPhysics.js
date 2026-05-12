@@ -1,0 +1,49 @@
+diff --git a/Jolt/Physics/Constraints/ContactConstraintManager.cpp b/Jolt/Physics/Constraints/ContactConstraintManager.cpp
+index 7de3a448..ed2fc1a9 100644
+--- a/Jolt/Physics/Constraints/ContactConstraintManager.cpp
++++ b/Jolt/Physics/Constraints/ContactConstraintManager.cpp
+@@ -417,6 +417,22 @@ void ContactConstraintManager::ManifoldCache::SaveState(StateRecorder &inStream,
+ {
+ 	JPH_ASSERT(mIsFinalized);
+ 
++	// Save the cache's hash-map bucket counts. Without this, a peer
++	// that restores into a fresh engine ends up with a different
++	// bucket count than the saving peer (driven by Init/Prepare
++	// history, not by current contents), which puts identical
++	// (body-pair, manifold) entries into different hash buckets ->
++	// different iteration order during the next step's solver pass
++	// -> non-deterministic floating-point sums -> ~1e-3 velocity
++	// drift on the next step (visible as hash-level peer-diverged
++	// in browser-side multiplayer rollback). The receiving side's
++	// RestoreState reads these and SetNumBuckets to match before
++	// creating entries.
++	uint32 body_pair_buckets = mCachedBodyPairs.GetNumBuckets();
++	uint32 manifold_buckets = mCachedManifolds.GetNumBuckets();
++	inStream.Write(body_pair_buckets);
++	inStream.Write(manifold_buckets);
++
+ 	// Get contents of cache
+ 	Array<const BPKeyValue *> all_bp;
+ 	GetAllBodyPairsSorted(all_bp);
+@@ -502,6 +518,21 @@ bool ContactConstraintManager::ManifoldCache::RestoreState(const ManifoldCache &
+ 
+ 	bool success = true;
+ 
++	// Read the saving peer's hash-map bucket counts and set ours to
++	// match BEFORE creating any entries. The receiving cache is
++	// guaranteed clear here (Restore is called on the write buffer
++	// at the start of a restore; it gets populated then swapped to
++	// become the read buffer). Without this, entries land in
++	// different hash buckets on the saver vs the receiver, causing
++	// non-deterministic iteration order and ~1e-3 velocity drift
++	// on the next step. See matching SaveState above.
++	uint32 body_pair_buckets = mCachedBodyPairs.GetNumBuckets();
++	uint32 manifold_buckets = mCachedManifolds.GetNumBuckets();
++	inStream.Read(body_pair_buckets);
++	inStream.Read(manifold_buckets);
++	mCachedBodyPairs.SetNumBuckets(body_pair_buckets);
++	mCachedManifolds.SetNumBuckets(manifold_buckets);
++
+ 	// Create a contact allocator for restoring the contact cache
+ 	ContactAllocator contact_allocator(GetContactAllocator());
+ 

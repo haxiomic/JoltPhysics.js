@@ -122,6 +122,9 @@ FetchContent_Declare(
         GIT_REPOSITORY "https://github.com/jrouwe/JoltPhysics"
         GIT_TAG "v5.5.0"
 		SOURCE_SUBDIR "Build"
+		PATCH_COMMAND git apply --reject --whitespace=fix
+			"${CMAKE_CURRENT_SOURCE_DIR}/patches/jolt-bucket-count-savestate.diff"
+			|| echo "patch already applied or rejected (idempotent)"
 )
 FetchContent_MakeAvailable(JoltPhysics)
 
