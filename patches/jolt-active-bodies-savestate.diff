@@ -1,0 +1,113 @@
+diff --git a/Jolt/Physics/Body/BodyManager.cpp b/Jolt/Physics/Body/BodyManager.cpp
+index f6c0584e..f446fe07 100644
+--- a/Jolt/Physics/Body/BodyManager.cpp
++++ b/Jolt/Physics/Body/BodyManager.cpp
+@@ -782,6 +782,26 @@ void BodyManager::SaveState(StateRecorder &inStream, const StateRecorderFilter *
+ 			b->SaveState(inStream);
+ 		}
+ 
++		// Write the mActiveBodies array contents per body-type.
++		// mActiveBodies is filled in activation-order, not slot-order;
++		// mIndexInActiveBodies (the per-body slot inside that array)
++		// is what the solver and IslandBuilder consume via index.
++		// Without persisting this order, a peer that restores into
++		// a fresh engine ends up with bodies activated in slot-order
++		// (the order the body-state restore loop encounters them)
++		// while the saving peer had them in spawn-order — different
++		// indices in mActiveBodies => different solver processing
++		// order => non-deterministic ~1e-3 velocity drift on the
++		// next step in contact-rich scenes.
++		for (int type = 0; type < (int)cBodyTypeCount; ++type)
++		{
++			uint32 num_active = mNumActiveBodies[type].load(std::memory_order_relaxed);
++			inStream.Write(num_active);
++			const BodyID *active_bodies = mActiveBodies[type];
++			for (uint32 i = 0; i < num_active; ++i)
++				inStream.Write(active_bodies[i]);
++		}
++
+ 		UnlockAllBodies();
+ 	}
+ }
+@@ -866,20 +886,76 @@ bool BodyManager::RestoreState(StateRecorder &inStream)
+ 		UnlockAllBodies();
+ 	}
+ 
++	// Read the saving peer's mActiveBodies order. We use this to
++	// activate bodies in the SAME order on the receiving side so
++	// the resulting mActiveBodies array (and the per-body
++	// mIndexInActiveBodies values) match across peers. See matching
++	// SaveState comment above.
++	Array<Array<BodyID>> saved_active_per_type((size_t)cBodyTypeCount);
++	for (int type = 0; type < (int)cBodyTypeCount; ++type)
++	{
++		uint32 num_active = 0;
++		inStream.Read(num_active);
++		saved_active_per_type[type].resize(num_active);
++		for (uint32 i = 0; i < num_active; ++i)
++			inStream.Read(saved_active_per_type[type][i]);
++	}
++
+ 	{
+ 		UniqueLock lock(mActiveBodiesMutex JPH_IF_ENABLE_ASSERTS(, this, EPhysicsLockTypes::ActiveBodiesList));
+ 
+-		for (BodyID body_id : bodies_to_activate)
++		// First: deactivate every body that the saver had inactive
++		// but we have active. This includes bodies in
++		// `bodies_to_deactivate` (the existing logic for when
++		// recorded is-active differs from current state). Bodies
++		// that should stay active will be re-deactivated then
++		// re-activated below in the saver's order, so their
++		// mIndexInActiveBodies is reassigned to match the saver.
++		for (BodyID body_id : bodies_to_deactivate)
+ 		{
+ 			Body *body = TryGetBody(body_id);
+-			AddBodyToActiveBodies(*body);
++			RemoveBodyFromActiveBodies(*body);
+ 		}
+ 
+-		for (BodyID body_id : bodies_to_deactivate)
++		// Now also deactivate every currently-active body so we can
++		// re-activate in the saved order — this is what makes the
++		// mActiveBodies array contents match the saver's. Skip
++		// bodies that are already being re-activated through
++		// bodies_to_activate (those weren't active yet).
++		for (int type = 0; type < (int)cBodyTypeCount; ++type)
+ 		{
+-			Body *body = TryGetBody(body_id);
+-			RemoveBodyFromActiveBodies(*body);
++			// Snapshot the current active list before mutating it.
++			uint32 num_currently_active = mNumActiveBodies[type].load(std::memory_order_relaxed);
++			Array<BodyID> currently_active;
++			currently_active.reserve(num_currently_active);
++			for (uint32 i = 0; i < num_currently_active; ++i)
++				currently_active.push_back(mActiveBodies[type][i]);
++			for (BodyID id : currently_active)
++			{
++				Body *body = TryGetBody(id);
++				if (body != nullptr)
++					RemoveBodyFromActiveBodies(*body);
++			}
+ 		}
++
++		// Re-activate everything in the saver's exact order so that
++		// mIndexInActiveBodies values match across peers.
++		for (int type = 0; type < (int)cBodyTypeCount; ++type)
++		{
++			for (BodyID body_id : saved_active_per_type[type])
++			{
++				Body *body = TryGetBody(body_id);
++				if (body != nullptr)
++					AddBodyToActiveBodies(*body);
++			}
++		}
++
++		// Discard bodies_to_activate — its contents are subsumed
++		// by the saver's active-order list above. (Bodies in
++		// bodies_to_activate not in the saver's list shouldn't
++		// happen for a coherent save/restore: a recorded
++		// is_active=true body must appear in saved_active_per_type.)
++		(void)bodies_to_activate;
+ 	}
+ 
+ 	return true;
