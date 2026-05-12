@@ -1,8 +1,8 @@
 diff --git a/Jolt/Physics/Constraints/ContactConstraintManager.cpp b/Jolt/Physics/Constraints/ContactConstraintManager.cpp
-index 7de3a448..ed2fc1a9 100644
+index 7de3a448..bf03695d 100644
 --- a/Jolt/Physics/Constraints/ContactConstraintManager.cpp
 +++ b/Jolt/Physics/Constraints/ContactConstraintManager.cpp
-@@ -417,6 +417,22 @@ void ContactConstraintManager::ManifoldCache::SaveState(StateRecorder &inStream,
+@@ -417,6 +417,24 @@ void ContactConstraintManager::ManifoldCache::SaveState(StateRecorder &inStream,
  {
  	JPH_ASSERT(mIsFinalized);
  
@@ -17,15 +17,17 @@ index 7de3a448..ed2fc1a9 100644
 +	// in browser-side multiplayer rollback). The receiving side's
 +	// RestoreState reads these and SetNumBuckets to match before
 +	// creating entries.
-+	uint32 body_pair_buckets = mCachedBodyPairs.GetNumBuckets();
-+	uint32 manifold_buckets = mCachedManifolds.GetNumBuckets();
-+	inStream.Write(body_pair_buckets);
-+	inStream.Write(manifold_buckets);
++	{
++		uint32 bp = mCachedBodyPairs.GetNumBuckets();
++		uint32 mf = mCachedManifolds.GetNumBuckets();
++		inStream.Write(bp);
++		inStream.Write(mf);
++	}
 +
  	// Get contents of cache
  	Array<const BPKeyValue *> all_bp;
  	GetAllBodyPairsSorted(all_bp);
-@@ -502,6 +518,21 @@ bool ContactConstraintManager::ManifoldCache::RestoreState(const ManifoldCache &
+@@ -502,6 +520,23 @@ bool ContactConstraintManager::ManifoldCache::RestoreState(const ManifoldCache &
  
  	bool success = true;
  
@@ -37,13 +39,94 @@ index 7de3a448..ed2fc1a9 100644
 +	// different hash buckets on the saver vs the receiver, causing
 +	// non-deterministic iteration order and ~1e-3 velocity drift
 +	// on the next step. See matching SaveState above.
-+	uint32 body_pair_buckets = mCachedBodyPairs.GetNumBuckets();
-+	uint32 manifold_buckets = mCachedManifolds.GetNumBuckets();
-+	inStream.Read(body_pair_buckets);
-+	inStream.Read(manifold_buckets);
-+	mCachedBodyPairs.SetNumBuckets(body_pair_buckets);
-+	mCachedManifolds.SetNumBuckets(manifold_buckets);
++	{
++		uint32 bp = mCachedBodyPairs.GetNumBuckets();
++		uint32 mf = mCachedManifolds.GetNumBuckets();
++		inStream.Read(bp);
++		inStream.Read(mf);
++		mCachedBodyPairs.SetNumBuckets(bp);
++		mCachedManifolds.SetNumBuckets(mf);
++	}
 +
  	// Create a contact allocator for restoring the contact cache
  	ContactAllocator contact_allocator(GetContactAllocator());
  
+@@ -661,6 +696,24 @@ bool ContactConstraintManager::ManifoldCache::RestoreState(const ManifoldCache &
+ 	return success;
+ }
+ 
++void ContactConstraintManager::ManifoldCache::SaveBucketCounts(StateRecorder &inStream) const
++{
++	uint32 bp = mCachedBodyPairs.GetNumBuckets();
++	uint32 mf = mCachedManifolds.GetNumBuckets();
++	inStream.Write(bp);
++	inStream.Write(mf);
++}
++
++void ContactConstraintManager::ManifoldCache::RestoreBucketCounts(StateRecorder &inStream)
++{
++	uint32 bp = 0;
++	uint32 mf = 0;
++	inStream.Read(bp);
++	inStream.Read(mf);
++	mCachedBodyPairs.SetNumBuckets(bp);
++	mCachedManifolds.SetNumBuckets(mf);
++}
++
+ ////////////////////////////////////////////////////////////////////////////////////////////////////////
+ // ContactConstraintManager
+ ////////////////////////////////////////////////////////////////////////////////////////////////////////
+@@ -1784,7 +1837,23 @@ void ContactConstraintManager::FinishConstraintBuffer()
+ 
+ void ContactConstraintManager::SaveState(StateRecorder &inStream, const StateRecorderFilter *inFilter) const
+ {
++	// The read buffer (used for lookups during the next step,
++	// contains the just-finished step's manifolds + read-side
++	// bucket counts via ManifoldCache::SaveState above).
+ 	mCache[mCacheWriteIdx ^ 1].SaveState(inStream, inFilter);
++
++	// Also save the WRITE buffer's hash-map bucket counts. The write
++	// buffer is empty at this point (Cleared + Prepare'd at the end
++	// of FinalizeContactCacheAndCallContactPointRemovedCallbacks
++	// with last frame's contact counts -> typically clamped to
++	// cMinBuckets=1024), but its bucket count is what the next step
++	// will hash NEW manifold writes into. On a freshly Init'd engine
++	// the write buffer's bucket count is GetNextPowerOf2(maxBodyPairs)
++	// (e.g. 4096), so without persisting this, joiner and host land
++	// identical manifold writes in different buckets next step ->
++	// different in-bucket iteration order -> ~1e-3 velocity drift,
++	// even though the read-side bytes are bit-identical.
++	mCache[mCacheWriteIdx].SaveBucketCounts(inStream);
+ }
+ 
+ bool ContactConstraintManager::RestoreState(StateRecorder &inStream, const StateRecorderFilter *inFilter)
+@@ -1796,6 +1865,12 @@ bool ContactConstraintManager::RestoreState(StateRecorder &inStream, const State
+ 	{
+ 		mCacheWriteIdx ^= 1;
+ 		mCache[mCacheWriteIdx].Clear();
++
++		// Apply the host's write-buffer bucket counts to our new
++		// (just-cleared) write buffer. This ensures the next step's
++		// manifold writes hash into the same buckets on both peers.
++		// See matching SaveState above.
++		mCache[mCacheWriteIdx].RestoreBucketCounts(inStream);
+ 	}
+ 
+ 	return success;
+diff --git a/Jolt/Physics/Constraints/ContactConstraintManager.h b/Jolt/Physics/Constraints/ContactConstraintManager.h
+index 0b5938b7..62307bf8 100644
+--- a/Jolt/Physics/Constraints/ContactConstraintManager.h
++++ b/Jolt/Physics/Constraints/ContactConstraintManager.h
+@@ -398,6 +398,12 @@ private:
+ 		void					SaveState(StateRecorder &inStream, const StateRecorderFilter *inFilter) const;
+ 		bool					RestoreState(const ManifoldCache &inReadCache, StateRecorder &inStream, const StateRecorderFilter *inFilter);
+ 
++		/// Save/restore just the hash-map bucket counts (without entries).
++		/// Used for the write buffer at save time which is empty but whose
++		/// bucket count must be preserved across save/restore for determinism.
++		void					SaveBucketCounts(StateRecorder &inStream) const;
++		void					RestoreBucketCounts(StateRecorder &inStream);
++
+ 	private:
+ 		/// Block size used when allocating new blocks in the contact cache
+ 		static constexpr uint32	cAllocatorBlockSize = 4096;
