@@ -1,5 +1,7 @@
 Build/
-dist/
+# `dist/` IS tracked: vendored as a `file:` dep
+# (packages/physics/package.json) and built artifacts are checked in
+# so CI doesn't need emsdk + cmake. Upstream excludes dist; we override.
 node_modules
 Examples/js/jolt-physics.*.js
 __pycache__

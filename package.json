@@ -1,7 +1,7 @@
 {
-	"name": "jolt-physics",
-	"version": "1.0.0",
-	"description": "A WebAssembly port of JoltPhysics, a rigid body physics and collision detection library, suitable for games and VR applications",
+	"name": "jolt-physics-deterministic",
+	"version": "1.0.0-cpd.1",
+	"description": "Fork of jolt-physics built with CROSS_PLATFORM_DETERMINISTIC=ON for cross-architecture deterministic netcode (browser-side multiplayer rollback).",
 	"type": "module",
 	"main": "dist/jolt-physics.wasm-compat.js",
 	"types": "dist/jolt-physics.wasm-compat.d.ts",

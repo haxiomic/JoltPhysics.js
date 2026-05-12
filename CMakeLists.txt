@@ -101,6 +101,20 @@ else()
 	set(USE_WASM_SIMD OFF)
 endif()
 
+# Option to enable upstream JoltPhysics' CROSS_PLATFORM_DETERMINISTIC build mode.
+# This forces deterministic IEEE-754 paths (Jolt's polynomial trig + strict
+# associativity) at a ~8% perf cost. Required for cross-architecture netcode
+# (browser-side multiplayer rollback over the public internet).
+# Default OFF preserves upstream behavior; opt in via -DCROSS_PLATFORM_DETERMINISTIC=ON.
+option(CROSS_PLATFORM_DETERMINISTIC "Compile Jolt with the cross-platform deterministic build flag" OFF)
+if (CROSS_PLATFORM_DETERMINISTIC)
+	# Forward to the upstream JoltPhysics CMake option of the same name.
+	# Must be set BEFORE FetchContent_MakeAvailable so the option() call inside
+	# JoltPhysics/Build/CMakeLists.txt picks it up (CMP0077 NEW honors parent vars).
+	set(CROSS_PLATFORM_DETERMINISTIC ON CACHE BOOL "Pass-through to upstream JoltPhysics" FORCE)
+	message(STATUS "JoltPhysics.js: CROSS_PLATFORM_DETERMINISTIC=ON (cross-arch determinism, ~8% perf cost)")
+endif()
+
 # Include Jolt
 include(FetchContent)
 FetchContent_Declare(
@@ -195,6 +209,14 @@ set(EMCC_GLUE_ARGS
   -include ${JOLT_HEADER_FILE}
   ${MEMORY_PROFILER_FLAG}
   ${ENABLE_SIMD_FLAG})
+
+# Forward the cross-platform-deterministic define to glue.cpp so Jolt's inline
+# math (Vec3, Quat, etc.) used in the embind glue is compiled with the same
+# IEEE-754 contracts as libJolt.a. Without this, glue's inline math could
+# diverge from the static lib's compiled-in deterministic paths.
+if (CROSS_PLATFORM_DETERMINISTIC)
+	set(EMCC_GLUE_ARGS ${EMCC_GLUE_ARGS} -DJPH_CROSS_PLATFORM_DETERMINISTIC -ffp-contract=off)
+endif()
 
 # Can't find a way to automatically inherit settings set by target_compile_definitions, so hardcoding defines here
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
