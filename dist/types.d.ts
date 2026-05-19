@@ -4452,4 +4452,18 @@ declare module Jolt {
         sGetFreeMemory(): number;
         sGetFixedToWorldBody(): Body;
     }
+    class PartialResimHelper {
+        constructor(inPhysicsSystem: PhysicsSystem);
+        GetNumIslands(): number;
+        GetNumBodiesInIsland(inIslandIndex: number): number;
+        GetBodiesInIsland(inIslandIndex: number, outBodies: BodyIDVector): void;
+        GetNumConstraintsInIsland(inIslandIndex: number): number;
+        ResizeMask(inNumIslands: number): void;
+        GetMaskSize(): number;
+        SetIslandActive(inIslandIndex: number, inActive: boolean): void;
+        IsIslandActive(inIslandIndex: number): boolean;
+        EnableMask(): void;
+        DisableMask(): void;
+        IsMaskEnabled(): boolean;
+    }
 }

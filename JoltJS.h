@@ -512,6 +512,13 @@ public:
 		return &Body::sFixedToWorld;
 	}
 
+	/// Get the IslandBuilder used by the physics system. Valid only after JobFinalizeIslands
+	/// has run during an Update (e.g. inspect from a PhysicsStepListener). See PartialResimHelper.
+	const IslandBuilder *	GetIslandBuilder() const
+	{
+		return &mPhysicsSystem->GetIslandBuilder();
+	}
+
 private:
 	TempAllocatorImpl *		mTempAllocator = nullptr;
 	JobSystemThreadPool *	mJobSystem = nullptr;
@@ -522,6 +529,121 @@ private:
 #ifdef JPH_ENABLE_ASSERTS
 	inline static AssertFailedHandler *sAssertFailedHandler = nullptr;
 #endif
+};
+
+/// Helper class for the partial re-simulation rollback optimization.
+///
+/// Wraps a PhysicsSystem and exposes a JS-friendly surface over the engine's
+/// IslandBuilder + the per-Update "active island mask" added in the
+/// haxiomic/JoltPhysics vendor/partial-resim engine fork.
+///
+/// Usage from JS:
+///   - During an Update, the island layout is only valid after JobFinalizeIslands.
+///     Inspect it from a PhysicsStepListener subclass.
+///   - GetNumIslands()/GetBodiesInIsland() let JS decide which islands are "dirty".
+///   - ResizeMask(n) + SetIslandActive(i, active) build the mask; EnableMask()
+///     points the engine at it for the next Update. DisableMask() restores full
+///     simulation. With the mask null/disabled, simulation is bit-identical to
+///     upstream.
+class PartialResimHelper
+{
+public:
+							PartialResimHelper(PhysicsSystem *inPhysicsSystem) :
+		mPhysicsSystem(inPhysicsSystem)
+	{
+	}
+
+							~PartialResimHelper()
+	{
+		// Make sure the engine is not left pointing at our (about to be freed) buffer
+		mPhysicsSystem->SetActiveIslandMask(nullptr);
+	}
+
+	/// Number of islands built in the last finalized island pass. Valid only after
+	/// JobFinalizeIslands has run in the current Update.
+	uint32					GetNumIslands() const
+	{
+		return mPhysicsSystem->GetIslandBuilder().GetNumIslands();
+	}
+
+	/// Number of bodies in the given island. Valid only after JobFinalizeIslands.
+	uint32					GetNumBodiesInIsland(uint32 inIslandIndex) const
+	{
+		BodyID *begin, *end;
+		mPhysicsSystem->GetIslandBuilder().GetBodiesInIsland(inIslandIndex, begin, end);
+		return uint32(end - begin);
+	}
+
+	/// Append the BodyIDs that belong to the given island to outBodies. Valid only
+	/// after JobFinalizeIslands.
+	void					GetBodiesInIsland(uint32 inIslandIndex, Array<BodyID> &outBodies) const
+	{
+		BodyID *begin, *end;
+		mPhysicsSystem->GetIslandBuilder().GetBodiesInIsland(inIslandIndex, begin, end);
+		for (BodyID *id = begin; id < end; ++id)
+			outBodies.push_back(*id);
+	}
+
+	/// Number of (non-contact) constraints in the given island. Valid only after
+	/// JobFinalizeIslands.
+	uint32					GetNumConstraintsInIsland(uint32 inIslandIndex) const
+	{
+		uint32 *begin, *end;
+		if (!mPhysicsSystem->GetIslandBuilder().GetConstraintsInIsland(inIslandIndex, begin, end))
+			return 0;
+		return uint32(end - begin);
+	}
+
+	/// Resize the active-island mask buffer; all entries are initialized to "active" (1).
+	/// Call this once per Update with GetNumIslands() as the size.
+	void					ResizeMask(uint32 inNumIslands)
+	{
+		mMask.resize(inNumIslands);
+		for (uint8 &e : mMask)
+			e = uint8(1);
+	}
+
+	/// Current size of the mask buffer.
+	uint32					GetMaskSize() const
+	{
+		return uint32(mMask.size());
+	}
+
+	/// Flag an island as active (true => solved + integrated) or inactive (false => skipped).
+	void					SetIslandActive(uint32 inIslandIndex, bool inActive)
+	{
+		if (inIslandIndex < mMask.size())
+			mMask[inIslandIndex] = inActive? uint8(1) : uint8(0);
+	}
+
+	/// Whether the island is currently flagged active in the mask buffer.
+	bool					IsIslandActive(uint32 inIslandIndex) const
+	{
+		return inIslandIndex < mMask.size() && mMask[inIslandIndex] != 0;
+	}
+
+	/// Point the engine at the mask buffer: the next Update will only solve + integrate
+	/// islands flagged active. The buffer must cover all islands of that Update.
+	void					EnableMask()
+	{
+		mPhysicsSystem->SetActiveIslandMask(mMask.empty()? nullptr : mMask.data());
+	}
+
+	/// Detach the mask: the next Update runs the full simulation (upstream behavior).
+	void					DisableMask()
+	{
+		mPhysicsSystem->SetActiveIslandMask(nullptr);
+	}
+
+	/// Whether the engine currently has a non-null active island mask set.
+	bool					IsMaskEnabled() const
+	{
+		return mPhysicsSystem->GetActiveIslandMask() != nullptr;
+	}
+
+private:
+	PhysicsSystem *			mPhysicsSystem;
+	Array<uint8>			mMask;
 };
 
 /// Helper class to extract triangles from the shape

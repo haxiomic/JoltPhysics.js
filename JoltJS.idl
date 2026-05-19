@@ -4044,3 +4044,18 @@ interface JoltInterface {
 	static unsigned long sGetFreeMemory();
 	static Body sGetFixedToWorldBody();
 };
+
+interface PartialResimHelper {
+	void PartialResimHelper(PhysicsSystem inPhysicsSystem);
+	[Const] unsigned long GetNumIslands();
+	[Const] unsigned long GetNumBodiesInIsland(unsigned long inIslandIndex);
+	[Const] void GetBodiesInIsland(unsigned long inIslandIndex, [Ref] BodyIDVector outBodies);
+	[Const] unsigned long GetNumConstraintsInIsland(unsigned long inIslandIndex);
+	void ResizeMask(unsigned long inNumIslands);
+	[Const] unsigned long GetMaskSize();
+	void SetIslandActive(unsigned long inIslandIndex, boolean inActive);
+	[Const] boolean IsIslandActive(unsigned long inIslandIndex);
+	void EnableMask();
+	void DisableMask();
+	[Const] boolean IsMaskEnabled();
+};

@@ -119,8 +119,8 @@ endif()
 include(FetchContent)
 FetchContent_Declare(
         JoltPhysics
-        GIT_REPOSITORY "https://github.com/jrouwe/JoltPhysics"
-        GIT_TAG "v5.5.0"
+        GIT_REPOSITORY "https://github.com/haxiomic/JoltPhysics"
+        GIT_TAG "vendor/partial-resim"
 		SOURCE_SUBDIR "Build"
 		PATCH_COMMAND
 			git apply --reject --whitespace=fix

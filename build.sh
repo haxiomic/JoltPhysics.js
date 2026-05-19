@@ -15,7 +15,7 @@ mkdir dist
 
 if [ $BUILD_TYPE != "Debug" ]
 then
-	cmake -B Build/Debug/ST -DCMAKE_BUILD_TYPE=Debug -DBUILD_WASM_COMPAT_ONLY=ON "${@}"
+	cmake -B Build/Debug/ST -DENABLE_SIMD=ON -DCMAKE_BUILD_TYPE=Debug -DBUILD_WASM_COMPAT_ONLY=ON "${@}"
 	cmake --build Build/Debug/ST -j`nproc`
 
 	cmake -B Build/Debug/MT -DENABLE_MULTI_THREADING=ON -DENABLE_SIMD=ON -DCMAKE_BUILD_TYPE=Debug -DBUILD_WASM_COMPAT_ONLY=ON "${@}"
@@ -25,7 +25,7 @@ then
 	mv ./dist/jolt-physics.multithread.wasm-compat.js ./dist/jolt-physics.debug.multithread.wasm-compat.js
 fi
 
-cmake -B Build/$BUILD_TYPE/ST -DCMAKE_BUILD_TYPE=$BUILD_TYPE "${@}"
+cmake -B Build/$BUILD_TYPE/ST -DENABLE_SIMD=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE "${@}"
 cmake --build Build/$BUILD_TYPE/ST -j`nproc`
 
 cmake -B Build/$BUILD_TYPE/MT -DENABLE_MULTI_THREADING=ON -DENABLE_SIMD=ON -DCMAKE_BUILD_TYPE=$BUILD_TYPE "${@}"
