@@ -2147,6 +2147,7 @@ declare module Jolt {
         ShouldSaveBody(inBody: number): boolean;
         ShouldSaveConstraint(inConstraint: number): boolean;
         ShouldSaveContact(inBody1: number, inBody2: number): boolean;
+        ShouldRestoreBody(inBodyID: number): boolean;
         ShouldRestoreContact(inBody1: number, inBody2: number): boolean;
     }
     class StateRecorder {
@@ -4465,5 +4466,8 @@ declare module Jolt {
         EnableMask(): void;
         DisableMask(): void;
         IsMaskEnabled(): boolean;
+        SetDirtyBodies(inBodies: BodyIDVector): void;
+        ClearDirtyBodies(): void;
+        GetDirtyIslandBodies(outBodies: BodyIDVector): void;
     }
 }

@@ -641,6 +641,29 @@ public:
 		return mPhysicsSystem->GetActiveIslandMask() != nullptr;
 	}
 
+	/// Set the per-body "dirty" set. When active this OVERRIDES the per-island mask above:
+	/// during the next Update, an island is solved + integrated iff it contains a dirty body.
+	/// The body IDs are copied; inBodies need not be kept alive.
+	void					SetDirtyBodies(const Array<BodyID> &inBodies)
+	{
+		mPhysicsSystem->SetDirtyBodies(inBodies.empty()? nullptr : inBodies.data(), uint32(inBodies.size()));
+	}
+
+	/// Clear the per-body dirty set, reverting to the per-island mask (or full simulation).
+	void					ClearDirtyBodies()
+	{
+		mPhysicsSystem->ClearDirtyBodies();
+	}
+
+	/// Append the bodies that ended up in an active (dirty) island during the most recent
+	/// Update (with a dirty set active) to outBodies. Used to measure contamination growth.
+	void					GetDirtyIslandBodies(Array<BodyID> &outBodies) const
+	{
+		const Array<BodyID> &dirty = mPhysicsSystem->GetDirtyIslandBodies();
+		for (const BodyID &id : dirty)
+			outBodies.push_back(id);
+	}
+
 private:
 	PhysicsSystem *			mPhysicsSystem;
 	Array<uint8>			mMask;

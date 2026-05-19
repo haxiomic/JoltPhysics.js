@@ -2022,6 +2022,7 @@ interface StateRecorderFilterJS {
 	[Const] boolean ShouldSaveBody([Const, Ref] Body inBody);
 	[Const] boolean ShouldSaveConstraint([Const, Ref] Constraint inConstraint);
 	[Const] boolean ShouldSaveContact([Const, Ref] BodyID inBody1, [Const, Ref] BodyID inBody2);
+	[Const] boolean ShouldRestoreBody([Const, Ref] BodyID inBodyID);
 	[Const] boolean ShouldRestoreContact([Const, Ref] BodyID inBody1, [Const, Ref] BodyID inBody2);
 };
 
@@ -4058,4 +4059,7 @@ interface PartialResimHelper {
 	void EnableMask();
 	void DisableMask();
 	[Const] boolean IsMaskEnabled();
+	void SetDirtyBodies([Const, Ref] BodyIDVector inBodies);
+	void ClearDirtyBodies();
+	[Const] void GetDirtyIslandBodies([Ref] BodyIDVector outBodies);
 };
