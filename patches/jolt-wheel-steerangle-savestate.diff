@@ -1,0 +1,20 @@
+diff --git a/Jolt/Physics/Vehicle/VehicleConstraint.cpp b/Jolt/Physics/Vehicle/VehicleConstraint.cpp
+index 9b0f93a9..7c1d2cb1 100644
+--- a/Jolt/Physics/Vehicle/VehicleConstraint.cpp
++++ b/Jolt/Physics/Vehicle/VehicleConstraint.cpp
+@@ -639,6 +639,7 @@ void VehicleConstraint::SaveState(StateRecorder &inStream) const
+ 	for (const Wheel *w : mWheels)
+ 	{
+ 		inStream.Write(w->mAngularVelocity);
++		inStream.Write(w->mSteerAngle);                // Updated incrementally by WheeledVehicleController::PreCollide; per-step state, NOT a setting
+ 		inStream.Write(w->mAngle);
+ 		inStream.Write(w->mContactBodyID); // Used by MotorcycleController::PreCollide
+ 		inStream.Write(w->mContactPosition); // Used by VehicleCollisionTester::PredictContactProperties
+@@ -666,6 +667,7 @@ void VehicleConstraint::RestoreState(StateRecorder &inStream)
+ 	for (Wheel *w : mWheels)
+ 	{
+ 		inStream.Read(w->mAngularVelocity);
++		inStream.Read(w->mSteerAngle);                 // Pair with SaveState above; without this, rollback leaves wheel steer angle stale -> cross-peer divergence on the next step's wheel rotation
+ 		inStream.Read(w->mAngle);
+ 		inStream.Read(w->mContactBodyID);
+ 		inStream.Read(w->mContactPosition);

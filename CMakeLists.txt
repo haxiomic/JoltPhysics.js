@@ -126,6 +126,7 @@ FetchContent_Declare(
 			git apply --reject --whitespace=fix
 				"${CMAKE_CURRENT_SOURCE_DIR}/patches/jolt-bucket-count-savestate.diff"
 				"${CMAKE_CURRENT_SOURCE_DIR}/patches/jolt-active-bodies-savestate.diff"
+				"${CMAKE_CURRENT_SOURCE_DIR}/patches/jolt-wheel-steerangle-savestate.diff"
 			|| echo "patch(es) already applied or rejected (idempotent)"
 )
 FetchContent_MakeAvailable(JoltPhysics)
