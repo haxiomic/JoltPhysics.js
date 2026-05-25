@@ -27,11 +27,19 @@ option(ENABLE_SIMD "Enable SIMD instructions (warning: last major browser to sup
 # Option to speed up compilation by only compiling the WASM compat version
 option(BUILD_WASM_COMPAT_ONLY "Compile online the WASM compat version of the library (speeds up compilation)" OFF)
 
-# Enable for resizable heap, with some amount of slowness
-option(ALLOW_MEMORY_GROWTH "Allow Memory Growth" OFF)
+# Enable for resizable heap, with some amount of slowness.
+# ON for the rollback-netcode use case: the engine snapshot ring keeps
+# ~historyFrames live StateRecorderImpl snapshots in the WASM heap, so a
+# fixed heap caps how many bodies a deterministic rollback scene can hold
+# (a 10×10×10 stack OOM'd at 128MB). Growth lets the heap scale with body
+# count up to MAXIMUM_MEMORY; determinism is unaffected (Jolt iterates by
+# BodyID, not address).
+option(ALLOW_MEMORY_GROWTH "Allow Memory Growth" ON)
 
-# Default initial memory size is 128*1024*1024 = 128MB
-set(INITIAL_MEMORY 134217728 CACHE STRING "Initial Memory")
+# Initial memory size = 256*1024*1024 = 256MB — covers typical scenes
+# (incl. the 1000-cube stack's snapshot ring) before any growth, so the
+# growth-time realloc stall is rare in practice.
+set(INITIAL_MEMORY 268435456 CACHE STRING "Initial Memory")
 
 # Default maximum memory size is 2*1024*1024*1024 = 2GB (only used when ALLOW_MEMORY_GROWTH is true)
 set(MAXIMUM_MEMORY 2147483648 CACHE STRING "Maximum Memory")
